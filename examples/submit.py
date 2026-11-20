@@ -1,0 +1,164 @@
+"""Compile Guppy to QIR, execute 128 shots per temperature/basis, save shot JSON.
+
+Default: submit to Nexus H2-1E and wait. --local uses noiseless Selene instead.
+--compile-only validates the H2 QIR without login or remote execution.
+After interruption, --resume results.json fetches the existing job, never resubmits.
+"""
+
+import argparse
+import json
+from datetime import datetime, timezone
+from importlib.metadata import version
+from pathlib import Path
+from uuid import uuid4
+
+from create_guppy import SHOTS, TEMPERATURES, build_program
+
+
+def save(path, document):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(document, indent=2) + "\n")
+    temporary.replace(path)
+
+
+def extract_shots(result, record):
+    """Use typed Guppy output tags rather than guessing QIR register bit order."""
+    rows = []
+    for shot in result.results:
+        values = dict(shot.entries)
+        index = int(values["shot"])
+        label = int(values["label"])
+        bits = [int(bit) for bit in values["bits"]]
+        if not 0 <= index < SHOTS:
+            raise ValueError(f"Unexpected shot index {index}; expected 0..127")
+        if label != record["sampled_labels"][index]:
+            raise ValueError("Executed label does not match the pre-sampled shot table")
+        if len(bits) != 16 or any(bit not in (0, 1) for bit in bits):
+            raise ValueError("Expected 16 measured bits per shot")
+        rows.append({"shot": index, "label": label, "bits": bits})
+    if sorted(row["shot"] for row in rows) != list(range(SHOTS)):
+        raise ValueError("Expected exactly one result for each of the 128 shots")
+    record["measurements"] = sorted(rows, key=lambda row: row["shot"])
+
+
+def fetch_nexus(qnx, job, document, output):
+    from hugr_qir.h2_helpers.results import backendresult_to_qsysresult
+
+    print(f"Waiting for Nexus job {job.id}", flush=True)
+    qnx.jobs.wait_for(job)
+    results = qnx.jobs.results(job)
+    if len(results) != len(document["experiments"]):
+        raise ValueError("Unexpected number of Nexus job results")
+    for record, reference in zip(document["experiments"], results, strict=True):
+        # Verify result identity, not only result-list ordering.
+        if str(reference.get_input().id) != record["program_id"]:
+            raise ValueError("Nexus result order differs from the submitted programs")
+        result = backendresult_to_qsysresult(reference.download_result())
+        extract_shots(result, record)
+        record["result_id"] = str(reference.id)
+        save(output, document)
+    document["status"] = "completed"
+    save(output, document)
+    print(f"Saved Nexus measurements to {output}", flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--local", action="store_true")
+    mode.add_argument("--compile-only", action="store_true")
+    mode.add_argument("--resume", type=Path, metavar="RESULTS_JSON")
+    parser.add_argument("--temperature", type=float, nargs="+", choices=TEMPERATURES,
+                        default=[2.375])
+    parser.add_argument("--basis", nargs="+", choices=("X", "Y", "Z"),
+                        default=["X", "Y", "Z"])
+    parser.add_argument("--seed", type=int, default=1821)
+    parser.add_argument("--project", default="PushQuantum-Thermal-Example")
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args()
+
+    if args.resume:
+        import qnexus as qnx
+        document = json.loads(args.resume.read_text())
+        if document["backend"] != "H2-1E" or not document.get("job_id"):
+            parser.error("--resume requires a manifest with a submitted H2-1E job")
+        if document["status"] == "completed":
+            print(f"Already completed: {args.resume}")
+            return
+        qnx.login()
+        fetch_nexus(qnx, qnx.jobs.get(id=document["job_id"]), document, args.resume)
+        return
+
+    suffix = "local" if args.local else "h2_1e"
+    output = args.output or Path(__file__).resolve().parent / "results" / f"tilted_product_{suffix}.json"
+    if output.exists():
+        parser.error(f"{output} already exists; use --resume or choose another --output")
+    if len(set(args.temperature)) != len(args.temperature) or len(set(args.basis)) != len(args.basis):
+        parser.error("Duplicate temperatures or bases would repeat the shot budget")
+
+    document = {
+        "schema_version": 1,
+        "method": "calibrated_tilted_product_mixture",
+        "backend": "Selene-noiseless" if args.local else "H2-1E",
+        "status": "compiling",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "hamiltonian": "-sum_<ij> Zi Zj - sum_i Xi; 4x4 periodic; 32 bonds; J=kB=1",
+        "bit_order": "bits[q] is qubit q=x+4*y; measurement bit b represents eigenvalue 1-2*b",
+        "calibration": "Exact target mx and mz2; classical labels sampled on host before compilation",
+        "shots_per_temperature_per_basis": SHOTS,
+        "versions": {p: version(p) for p in ("guppylang", "numpy", "qnexus")},
+        "experiments": [],
+    }
+    programs = []
+    for temperature in args.temperature:
+        for basis in args.basis:
+            seed = args.seed + TEMPERATURES.index(temperature) * 3 + ("X", "Y", "Z").index(basis)
+            program, record = build_program(temperature, basis, seed,
+                                           shot_offset=0 if args.local else 1)
+            if args.local:
+                # Compile before executing so malformed programs fail here too.
+                program.compile()
+                result = program.emulator(n_qubits=16).with_seed(seed).with_shots(SHOTS).run()
+                extract_shots(result, record)
+            else:
+                from hugr_qir.hugr_to_qir import hugr_to_qir
+                from hugr_qir.output import OutputFormat
+                qir = hugr_to_qir(program.compile(), output_format=OutputFormat.BITCODE)
+                programs.append(qir)
+            document["experiments"].append(record)
+            print(f"{'Simulated' if args.local else 'Validated QIR'}: T={temperature}, {basis}, {SHOTS} shots", flush=True)
+
+    if args.local or args.compile_only:
+        document["status"] = "completed" if args.local else "compiled_only"
+        save(output, document)
+        print(f"Saved {output}", flush=True)
+        return
+
+    import qnexus as qnx
+    qnx.login()
+    project = qnx.projects.get_or_create(name=args.project)
+    run_id = uuid4().hex[:12]
+    references = []
+    for index, (qir, record) in enumerate(zip(programs, document["experiments"], strict=True)):
+        reference = qnx.qir.upload(qir=qir, name=f"tilted-product-{run_id}-{index}", project=project)
+        record["program_id"] = str(reference.id)
+        references.append(reference)
+    document["project_id"] = str(project.id)
+    document["status"] = "uploaded"
+    save(output, document)
+    job = qnx.start_execute_job(
+        programs=references, n_shots=[SHOTS] * len(references),
+        backend_config=qnx.QuantinuumConfig(device_name="H2-1E"),
+        name=f"tilted-product-{run_id}", project=project,
+    )
+    document["job_id"] = str(job.id)
+    document["status"] = "submitted"
+    save(output, document)
+    print(f"Submitted {len(references)} experiments, {SHOTS * len(references)} total shots", flush=True)
+    print(f"If interrupted: uv run --locked submit.py --resume {output}", flush=True)
+    fetch_nexus(qnx, job, document, output)
+
+
+if __name__ == "__main__":
+    main()
