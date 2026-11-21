@@ -19,7 +19,12 @@ The participants have to come up with quantum algorithms to prepare the thermal 
 For each state at the given temperature T, measure the state in three different bases: X, Y, and Z, using 128 shots per basis.
 Upload all the shots for scoring.
 
+![Squared Z magnetization versus temperature and transverse field for the 4×4 periodic Ising model](docs/images/mz2_temperature_vs_field.png)
 
+The squared magnetization $\langle m_z^2\rangle$, with
+$m_z=\frac{1}{16}\sum_i Z_i$, shows ferromagnetic correlations at low temperature
+and low transverse field. The dotted line highlights the challenge field $g=1$.
+White lines mark constant values of $\langle m_z^2\rangle$ on this finite lattice.
 
 
 

@@ -1,9 +1,17 @@
 # Tilted-product example
 
-This baseline fits exact g=1 transverse magnetization and squared Z magnetization.
-It prepares a separable approximation, not an exact quantum Gibbs state. The
-classical enumeration and exact-data calibration do not provide a scalable
-temperature-only thermal-state preparation method.
+This baseline requires the target thermal observables
+$m_x=\langle\sum_i X_i/16\rangle$ and
+$\langle m_z^2\rangle=\langle(\sum_i Z_i/16)^2\rangle$ to be known beforehand,
+as well as the ability to sample a correlated classical Ising distribution.
+It fits the tilt angle to $m_x$ and the classical distribution parameter to
+$\langle m_z^2\rangle$; here, both targets come from exact diagonalization at $g=1$.
+
+The method is a simplified, calibrated baseline related to variational thermal
+state preparation: it fits known target observables rather than learning the
+state from the Hamiltonian and temperature alone. It prepares a separable
+approximation, and the exact-data calibration and exhaustive classical sampling
+used here do not constitute a generally scalable thermal-state preparation method.
 
 Run these commands from this `examples/` directory. uv uses the shared
 environment defined in the repository root.
