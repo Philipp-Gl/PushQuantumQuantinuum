@@ -13,8 +13,7 @@ H = - \sum_{\langle i,j \rangle} Z_i Z_j - g \sum_{i} X_i .
 ```
 
 Throughout the challenge, we will study the case where the transverse field strength $g = 1$.
-Here $X_i$ and $Z_i$ are Pauli operators with eigenvalues $\pm1$.
-Each of the 32 distinct nearest-neighbor bonds is counted once, and $J=k_B=1$.
+Here $X_i$ and $Z_i$ are Pauli operators.
 
 The participants have to come up with quantum algorithms to prepare the thermal states at the given temperatures $T \in [10^{-2}, 1.1875, 2.375, 4]$.
 For each state at the given temperature T, measure the state in three different bases: X, Y, and Z, using 128 shots per basis.
@@ -102,16 +101,14 @@ Submit one JSON file per temperature, with the following structure:
 ```
 
 This illustrative example shows only two shots per basis. A complete submission
-contains **128 rows for each of `X`, `Y`, and `Z`**, with **16 measured bits in
-each row**. The three arrays contain separate runs measured in their respective
-bases; their row indices do not identify joint X/Y/Z measurements of one copy.
+contains **128 rows for each of `X`, `Y`, and `Z` basis measurement**,
+with **16 measured bits in each row**.
 
-- `temperature` is the physical target temperature, in units where $J=k_B=1$.
-- Each row is one shot. Column $q=x+4y$ corresponds to lattice site $(x,y)$,
-  where $x,y\in\{0,1,2,3\}$. Column 0 is qubit 0; do not reverse the columns
-  to match the printed order of an integer or binary string.
+- `temperature` is the specific target temperatures given.
+- Each row is one shot. Column (index) $q=x+4y$ corresponds to lattice site $(x,y)$,
+  where $x,y\in\{0,1,2,3\}$.
 - A bit $b\in\{0,1\}$ represents the measured Pauli eigenvalue $1-2b$:
-  bit 0 means +1 and bit 1 means -1, in the basis named by the array key.
+  bit 0 means +1 and bit 1 means -1, in the basis specified by the array key.
 - Include the 16 system-qubit outcomes only; omit ancilla outcomes.
 - Classical preparation labels, shot indices, circuit parameters, and Nexus job
   IDs are not required in the scoring submission. Keep all preparation branches
@@ -126,9 +123,13 @@ emulator execution.
 
 ### Score formula
 
-We score **30 observables**: three site-averaged magnetizations and nine
-translation-averaged correlations per basis. For measured eigenvalues
-$s_{n,i}^a=1-2b_{n,i}^a$, define
+We score **30 observables**:
+- the single-site expectation value $<X>$, $<Y>$, and $<Z>$
+- the two-site expectation value $<X_i X_j>$, $<Y_i Y_j>$, and $<Z_i Z_j>$ for the nine displacements $(d_x,d_y)$
+`(0,1), (0,2), (1,0), (1,1), (1,2), (1,3), (2,0), (2,1), (2,2)`.
+
+For each observable, we compute the average over all 128 shots and all 16 sites.
+For measured eigenvalues $s_{n,i}^a=1-2b_{n,i}^a$, define
 
 ```math
 \widehat m_a=\frac{1}{128\cdot16}\sum_{n,i}s_{n,i}^a,

@@ -9,6 +9,9 @@ Run these commands from this `examples/` directory. uv uses the shared
 environment defined in the repository root.
 
 ```bash
+# Calibrate and sample once (T=2.375; pre-generated files are also included).
+uv run --locked preprocessing.py
+
 # Validate the three T=2.375 programs through the H2 checker, without Nexus access.
 uv run --locked submit.py --compile-only --output results/compile_check.json
 
@@ -27,23 +30,29 @@ Use `--temperature 2.375 --basis Z --output results/smoke.json` for one experime
 H2-1E uses its default noise model; the local Selene run is noiseless and clearly
 identified as such in its separate JSON output.
 
-`create_guppy.py` provides `build_program(T, basis, seed)`, a Guppy `body`, and
-separate `measure_x`, `measure_y`, `measure_z` functions. A zero-argument `main`
-combines body with the chosen measurement. Run `uv run --locked create_guppy.py`
-to export one HUGR program without submission.
+The files have separate responsibilities:
 
-NumPy cannot execute on the device. `body` calls a `@guppy.comptime` helper that
-calls `sample_labels`: 128 whole classical configurations are independently drawn on
-the host, then embedded into the program. `get_current_shot()` selects
-the appropriate configuration. H2 reports indices 1..128, so the H2 program
-subtracts 1; Selene reports 0..127 and uses offset 0. This difference was checked
-on H2-1E. Submit exactly 128 shots with the backend's default shot numbering;
-recompiling with the same seed deliberately reproduces the same sample table.
-Re-executing an existing compiled program reuses those labels. The emitted
-`shot` and `label` outputs are checked against the table when collecting results.
-The sample table is packed into two 64-bit masks per qubit so H2 can select the
-bit for the current shot without unsupported dynamic array indexing. Measurement
-basis changes are expanded at compile time for the same compatibility reason.
+- `preprocessing.py` loads the spectrum, fits `k` and `theta`, samples 128 whole
+  configurations independently for each basis, and saves:
+  - `data/parameters_2.375.json`: fitted parameters and sampling seeds.
+  - `data/samples_2.375.npz`: X/Y/Z sample labels and packed H2 lookup masks.
+- `create_guppy.py` loads those files and builds the preparation `body`, separate
+  X/Y/Z measurement functions, and a zero-argument `main`. It performs no
+  calibration or sampling. `uv run --locked create_guppy.py` exports one HUGR program.
+- `submit.py` executes the programs locally or on Nexus and saves the results.
+
+To draw a new sample table, run `uv run --locked preprocessing.py --seed 42`. Seed control
+belongs to preprocessing, not submission. To preserve the existing table, add
+`--output-dir data/seed42` and pass `--data-dir data/seed42` to `submit.py` or
+`create_guppy.py`. For another temperature, first preprocess it explicitly, e.g.
+`uv run --locked preprocessing.py --temperature 1.1875`.
+
+At runtime, `get_current_shot()` selects the saved configuration. H2 indices
+start at 1; Selene indices start at 0. Submit exactly 128 shots with the default
+shot numbering. Recompiling or rerunning reuses the saved samples. The emitted
+`shot` and `label` outputs are validated when collecting results. Preprocessing
+packs the samples into two 64-bit masks per qubit to avoid H2's unsupported
+dynamic array indexing; the circuit file only applies those masks and rotations.
 
 For sampled spin s_q=+1 (bit 0), apply Ry(theta); for s_q=-1 (bit 1), apply
 Ry(pi-theta). The label distribution is exp[-k E_classical(s)]/Z, where k is a
@@ -54,7 +63,7 @@ The supplied `data/ising_spectra.npz` is a compact subset of the parent project'
 exact-diagonalization data: the g=0 computational-basis energies in integer-label
 order, and g=1 eigenenergies, symmetry multiplicities, and eigenstate mx/mz2.
 Never interpret the g=1 eigenstate index as a computational-basis bitstring.
-At T=0.01 the calibration is recomputed from the finite-temperature spectrum;
+When preprocessing T=0.01, calibration uses the finite-temperature spectrum;
 the earlier T=1e-8 coherent-cat benchmark is not used.
 
 Each JSON experiment records T, basis, calibration parameters, sampled labels,
