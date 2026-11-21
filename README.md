@@ -98,7 +98,7 @@ the repository root and prefix the commands with `uv run --locked`, for example
 - `compile` targets H2 and writes LLVM bitcode such as `program.x.bc` by
   default. Use `--format llvm-ir` for text QIR such as `program.y.ll`.
 - `local-sim` reads the required qubit count from the compiled QIR and uses it
-  to run Guppy in the noiseless Selene emulator. Its default output includes
+  to run Guppy in Selene, noiseless by default. Its default output includes
   the basis, for example `program.z.local.json`.
 - `nexus-emulator` accepts Guppy source or LLVM bitcode. It logs in to Nexus,
   executes on H2-1E using emulator credits, and writes a file such as
@@ -113,6 +113,21 @@ Both commands write the measurement outcomes under `bits` as integers `0` and `1
 For other QIR output layouts, Nexus results that cannot be decoded as Guppy
 tags are stored as a serialized pytket `backend_result`. Use the shot values
 to build the submission format below.
+
+### Local simulation with noise
+
+Enable depolarizing noise with `--noise-model depolarizing`. Use a separate
+output file to keep the ideal and noisy results for comparison.
+
+```bash
+local-sim program.py --basis z --noise-model depolarizing --seed 42 -o program.z.noisy.local.json
+```
+
+The model uses `p_1q=1e-5` for one-qubit gates, `p_2q=1.4e-4` for two-qubit
+gates, `p_meas=1e-3` for measurement, and `p_init=1e-5` for initialization.
+The error model uses the `--seed` value when supplied and `123141` otherwise.
+Noisy output includes `"noise_model": "depolarizing"`.
+[Selene error model guide](https://docs.quantinuum.com/selene/user_guide/error_model.html)
 
 
 ### Submission format

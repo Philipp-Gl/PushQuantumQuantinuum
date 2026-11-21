@@ -115,6 +115,8 @@ def local_sim_main():
                      "Python file defining a Guppy main.")
     parser.add_argument("--shots", type=positive_int, default=128, help="Shot count (default: 128).")
     parser.add_argument("--seed", type=int, help="Random seed for the emulator.")
+    parser.add_argument("--noise-model", choices=("ideal", "depolarizing"), default="ideal",
+                        help="Selene noise model (default: ideal).")
     args = parser.parse_args()
     source, output = paths(parser, args, ".local.json")
 
@@ -128,11 +130,24 @@ def local_sim_main():
         if qubits is None:
             raise SystemExit("QIR entry point does not declare its required qubit count.")
         emulator = main.emulator(n_qubits=qubits).with_shots(args.shots).with_seed(args.seed)
+        if args.noise_model == "depolarizing":
+            from selene_sim import DepolarizingErrorModel
+
+            error_model = DepolarizingErrorModel(
+                random_seed=123141 if args.seed is None else args.seed,
+                p_1q=1e-5,
+                p_2q=1.4e-4,
+                p_meas=1e-3,
+                p_init=1e-5,
+            )
+            emulator = emulator.with_error_model(error_model)
         result = emulator.run()
 
-    write_json(output, {"backend": "Selene", "basis": args.basis,
-                        "qubits": qubits, "shots": args.shots,
-                        "results": shot_results(result)})
+    document = {"backend": "Selene", "basis": args.basis, "qubits": qubits, "shots": args.shots}
+    if args.noise_model == "depolarizing":
+        document["noise_model"] = args.noise_model
+    document["results"] = shot_results(result)
+    write_json(output, document)
     print(f"Wrote {output}")
 
 
