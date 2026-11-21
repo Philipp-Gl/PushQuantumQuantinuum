@@ -53,19 +53,33 @@ Today, we focus on (i) and (iii).
 
 ## Getting Started
 
-With uv installed, run `uv sync --locked` from the repository root to set up
-the Python 3.12 environment. The participant commands accept a Python file with
-a module-level, zero-argument `@guppy` function named `main`. Use
-`output("bits", ...)` or other Guppy output tags to record values for each shot.
-See [the tilted-product example](examples/README.md) for the challenge workflow.
+Run `uv tool install` from the repository root to make `compile`, `local-sim`,
+and `nexus-emulator` available as standalone commands.
 
 ```bash
-uv run --locked compile program.py
-uv run --locked compile program.py --format llvm-ir -o program.ll
-uv run --locked local-sim program.py --seed 42
-uv run --locked nexus-emulator program.bc --project MyNexusProject
-uv run --locked nexus-emulator program.py --project MyNexusProject -o h2-results.json
+uv tool install --python 3.12 .
 ```
+
+If your shell cannot find the commands, run `uv tool update-shell` and open a
+new terminal. You can then run the commands from any directory. To pick up
+changes from your checkout, rerun the install command with `--reinstall`.
+
+The tools accept a Python file with a module-level, zero-argument `@guppy`
+function named `main`. Use `output("bits", ...)` or other Guppy output tags to
+record values for each shot.
+
+```bash
+compile program.py
+compile program.py --format llvm-ir -o program.ll
+local-sim program.py --seed 42
+nexus-emulator program.bc --project MyNexusProject
+nexus-emulator program.py --project MyNexusProject -o h2-results.json
+```
+
+To use the versions in the repository's lockfile, run `uv sync --locked` from
+the repository root and prefix the commands with `uv run --locked`, for example
+`uv run --locked compile program.py`. The scorer and
+[tilted-product example](examples/README.md) also use this project environment.
 
 - `compile` writes LLVM bitcode to `program.bc` by default. Use
   `--format llvm-ir` to write textual QIR to `program.ll`.
