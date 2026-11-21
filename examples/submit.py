@@ -14,14 +14,8 @@ from uuid import uuid4
 
 from preprocessing import BASES, DATA_DIR, SHOTS, TEMPERATURES
 from pushquantum.program import with_measurement
+from pushquantum.results import write_json
 from tilted_product import build_preparation
-
-
-def save(path, document):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(document, indent=2) + "\n")
-    temporary.replace(path)
 
 
 def extract_shots(result, record):
@@ -59,9 +53,9 @@ def fetch_nexus(qnx, job, document, output):
         result = backendresult_to_qsysresult(reference.download_result())
         extract_shots(result, record)
         record["result_id"] = str(reference.id)
-        save(output, document)
+        write_json(output, document)
     document["status"] = "completed"
-    save(output, document)
+    write_json(output, document)
     print(f"Saved Nexus measurements to {output}", flush=True)
 
 
@@ -134,7 +128,7 @@ def main():
 
     if args.local or args.compile_only:
         document["status"] = "completed" if args.local else "compiled_only"
-        save(output, document)
+        write_json(output, document)
         print(f"Saved {output}", flush=True)
         return
 
@@ -149,7 +143,7 @@ def main():
         references.append(reference)
     document["project_id"] = str(project.id)
     document["status"] = "uploaded"
-    save(output, document)
+    write_json(output, document)
     job = qnx.start_execute_job(
         programs=references, n_shots=[SHOTS] * len(references),
         backend_config=qnx.QuantinuumConfig(device_name="H2-1E"),
@@ -157,7 +151,7 @@ def main():
     )
     document["job_id"] = str(job.id)
     document["status"] = "submitted"
-    save(output, document)
+    write_json(output, document)
     print(f"Submitted {len(references)} experiments, {SHOTS * len(references)} total shots", flush=True)
     print(f"If interrupted: uv run --locked submit.py --resume {output}", flush=True)
     fetch_nexus(qnx, job, document, output)

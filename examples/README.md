@@ -93,8 +93,9 @@ When preprocessing T=0.01, calibration uses the finite-temperature spectrum;
 the earlier T=1e-8 coherent-cat benchmark is not used.
 
 Each JSON experiment records T, basis, calibration parameters, sampled labels,
-and 128 measurements. `bits[q]` corresponds to site q=x+4*y; bit b means measured
-Pauli eigenvalue 1-2*b. X readout applies H; Y readout applies S-dagger then H.
+and 128 measurements, with one shot per line. `bits[q]` corresponds to site
+`q=x+4*y`. Bit `b` represents the measured Pauli eigenvalue `1-2*b`.
+X readout applies H. Y readout applies S-dagger then H.
 All basis settings measure all 16 qubits. The default example uses T=2.375 only:
 three bases times 128 shots gives 384 total shots. Other challenge temperatures
 can be selected explicitly with `--temperature`.

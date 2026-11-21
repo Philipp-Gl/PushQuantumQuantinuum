@@ -107,7 +107,9 @@ the repository root and prefix the commands with `uv run --locked`, for example
 
 Default output paths are beside the input file. Use `-o` or `--output` to
 choose a path. Both emulators default to 128 shots and accept `--shots`.
-Each JSON `results` element is one shot containing ordered `[tag, value]` pairs.
+Each JSON `results` element is one shot containing ordered `[tag, value]` pairs
+on a single line.
+Both commands write the measurement outcomes under `bits` as integers `0` and `1`.
 For other QIR output layouts, Nexus results that cannot be decoded as Guppy
 tags are stored as a serialized pytket `backend_result`. Use the shot values
 to build the submission format below.

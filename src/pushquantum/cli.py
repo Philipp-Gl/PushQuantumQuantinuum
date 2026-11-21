@@ -1,14 +1,13 @@
 import argparse
-import json
 import sys
 from contextlib import contextmanager
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from uuid import uuid4
 
 from pushquantum.program import BASES, RunConfig, current_run, with_measurement
+from pushquantum.results import write_json
 
 
 def command(description, input_help, *, basis_required=True):
@@ -76,17 +75,16 @@ def qir_entrypoint(module):
     return entries[0]
 
 
-def shot_results(result):
-    return [shot.entries for shot in result.results]
-
-
-def write_json(output, document):
-    with NamedTemporaryFile(mode="w", dir=output.parent, encoding="utf-8",
-                            delete_on_close=False) as temporary:
-        json.dump(document, temporary, indent=2)
-        temporary.write("\n")
-        temporary.close()
-        Path(temporary.name).replace(output)
+def shot_results(result, *, integer_bits=False):
+    shots = []
+    for shot in result.results:
+        entries = []
+        for tag, value in shot.entries:
+            if integer_bits and tag == "bits" and isinstance(value, list):
+                value = [int(bit) if isinstance(bit, bool) else bit for bit in value]
+            entries.append((tag, value))
+        shots.append(entries)
+    return shots
 
 
 def compile_main():
@@ -132,7 +130,6 @@ def local_sim_main():
         emulator = main.emulator(n_qubits=qubits).with_shots(args.shots).with_seed(args.seed)
         result = emulator.run()
 
-    output.parent.mkdir(parents=True, exist_ok=True)
     write_json(output, {"backend": "Selene", "basis": args.basis,
                         "qubits": qubits, "shots": args.shots,
                         "results": shot_results(result)})
@@ -194,7 +191,7 @@ def nexus_emulator_main():
     backend_result = result.to_dict()
     if "shots" in backend_result:
         try:
-            document["results"] = shot_results(backendresult_to_qsysresult(result))
+            document["results"] = shot_results(backendresult_to_qsysresult(result), integer_bits=True)
         except ResultConversionError:
             document["backend_result"] = backend_result
     else:
