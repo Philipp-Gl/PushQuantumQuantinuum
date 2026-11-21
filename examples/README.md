@@ -13,8 +13,25 @@ state from the Hamiltonian and temperature alone. It prepares a separable
 approximation, and the exact-data calibration and exhaustive classical sampling
 used here do not constitute a generally scalable thermal-state preparation method.
 
-Run these commands from this `examples/` directory. uv uses the shared
-environment defined in the repository root.
+Install the CLI from the repository root, then switch to the `examples/`
+directory. The preprocessed files for `T=2.375` are included.
+
+```bash
+uv tool install --python 3.12 .
+cd examples
+compile tilted_product.py --basis x -o results/tilted_product.x.bc
+local-sim tilted_product.py --basis y -o results/tilted_product.y.local.json
+nexus-emulator tilted_product.py --basis z -o results/tilted_product.z.nexus.json
+```
+
+If your shell cannot find the commands, run `uv tool update-shell` and open a
+new terminal.
+
+The CLI selects the saved table for the requested basis and measures the
+16 qubits returned by `main`. The Nexus command uses emulator credits.
+Use `submit.py` to run several bases or temperatures and validate the
+preparation labels. The Python scripts below use the repository's locked
+project environment through `uv run --locked`.
 
 ```bash
 # Calibrate and sample once (T=2.375; pre-generated files are also included).
@@ -44,15 +61,16 @@ The files have separate responsibilities:
   configurations independently for each basis, and saves:
   - `data/parameters_2.375.json`: fitted parameters and sampling seeds.
   - `data/samples_2.375.npz`: X/Y/Z sample labels and packed H2 lookup masks.
-- `create_guppy.py` loads those files and builds the preparation `body`, separate
-  X/Y/Z measurement functions, and a zero-argument `main`. It performs no
-  calibration or sampling. `uv run --locked create_guppy.py` exports one HUGR program.
-- `submit.py` executes the programs locally or on Nexus and saves the results.
+- `tilted_product.py` loads the saved data and provides a zero-argument `main`
+  that returns the prepared qubits. `uv run --locked tilted_product.py` exports
+  one measured HUGR program for H2.
+- `submit.py` uses the same measurement wrapper as the CLI. It executes the
+  programs locally or on Nexus and saves the results.
 
 To draw a new sample table, run `uv run --locked preprocessing.py --seed 42`. Seed control
 belongs to preprocessing, not submission. To preserve the existing table, add
 `--output-dir data/seed42` and pass `--data-dir data/seed42` to `submit.py` or
-`create_guppy.py`. For another temperature, first preprocess it explicitly, e.g.
+`tilted_product.py`. For another temperature, first preprocess it explicitly, e.g.
 `uv run --locked preprocessing.py --temperature 1.1875`.
 
 At runtime, `get_current_shot()` selects the saved configuration. H2 indices

@@ -1,47 +1,23 @@
-"""Build a tilted-product Guppy program from saved parameters and sample tables.
+"""Prepare tilted-product states from saved parameters and sample tables.
 
-Run preprocessing.py to calibrate and sample. This file only loads those outputs,
-prepares the selected product branch, and measures in X, Y, or Z.
+Run preprocessing.py to calibrate and sample. The participant commands measure
+the qubits returned by this file's main in the selected basis.
 """
 
 import argparse
-import math
 import json
+import math
 from pathlib import Path
 
 import numpy as np
 from guppylang import guppy
 from guppylang.std.angles import angle
-from guppylang.std.builtins import array, comptime, output, owned
+from guppylang.std.builtins import array, comptime, output
 from guppylang.std.qsystem.utils import get_current_shot
-from guppylang.std.quantum import (
-    collect_measurements, h, measure_array, qubit, ry, s,
-)
+from guppylang.std.quantum import qubit, ry
 
-from preprocessing import BASES, DATA_DIR, SHOTS, TEMPERATURES
-
-
-@guppy
-def measure_z(qs: array[qubit, 16] @ owned) -> None:
-    output("bits", collect_measurements(measure_array(qs)))
-
-
-@guppy.comptime
-def measure_x(qs: array[qubit, 16] @ owned) -> None:
-    for q in range(16):
-        h(qs[q])
-    measure_z(qs)
-
-
-@guppy.comptime
-def measure_y(qs: array[qubit, 16] @ owned) -> None:
-    for q in range(16):
-        # S dagger, then H, maps a Y measurement to Z. S^3 = S dagger.
-        s(qs[q])
-        s(qs[q])
-        s(qs[q])
-        h(qs[q])
-    measure_z(qs)
+from preprocessing import BASES, DATA_DIR, SHOTS
+from pushquantum.program import current_run, with_measurement
 
 
 @guppy
@@ -59,8 +35,8 @@ def tilt_qubit(q: qubit, shot: int, low: int, high: int,
     return bit
 
 
-def build_program(temperature=2.375, basis="Z", data_dir=DATA_DIR, shot_offset=1):
-    """Return a zero-argument Guppy main and metadata; execute exactly 128 shots.
+def build_preparation(temperature=2.375, basis="Z", data_dir=DATA_DIR, shot_offset=1):
+    """Return a Guppy preparation function and metadata for 128 shots.
 
     Each shot uses an independently sampled label; 128 shots are the total for
     this temperature/basis, not 128 per configuration. Qubits are never entangled.
@@ -84,7 +60,6 @@ def build_program(temperature=2.375, basis="Z", data_dir=DATA_DIR, shot_offset=1
     if saved["temperature"] != temperature or saved["shots"] != SHOTS or len(labels) != SHOTS:
         raise ValueError("Preprocessed data must match the temperature and 128-shot budget")
     theta = parameters["theta_radians"]
-    measurement = {"X": measure_x, "Y": measure_y, "Z": measure_z}[basis]
 
     @guppy.comptime
     def apply_tilts(qs: array[qubit, 16]) -> int:
@@ -99,18 +74,13 @@ def build_program(temperature=2.375, basis="Z", data_dir=DATA_DIR, shot_offset=1
         return label
 
     @guppy
-    def body() -> array[qubit, 16]:
+    def main() -> array[qubit, 16]:
         qs = array(qubit() for _ in range(16))
         label = apply_tilts(qs)
         shot = get_current_shot() - comptime(shot_offset)
         output("shot", shot)
         output("label", label)
         return qs
-
-    @guppy
-    def main() -> None:
-        qs = body()
-        measurement(qs)
 
     metadata = {"temperature": float(temperature), "basis": basis, "seed": saved["seeds"][basis],
                 "shots": SHOTS, "shot_index_offset": shot_offset,
@@ -126,6 +96,11 @@ if __name__ == "__main__":
     parser.add_argument("--data-dir", type=Path, default=DATA_DIR)
     parser.add_argument("--output", type=Path, default=Path("tilted_product.hugr"))
     args = parser.parse_args()
-    main, metadata = build_program(args.temperature, args.basis, args.data_dir)
-    args.output.write_bytes(main.compile().to_bytes())
+    prepare, metadata = build_preparation(args.temperature, args.basis, args.data_dir)
+    program = with_measurement(prepare, args.basis.lower())
+    args.output.write_bytes(program.compile().to_bytes())
     print(f"Compiled {args.output}; parameters={metadata['parameters']}")
+elif (run := current_run.get()) is not None:
+    if run.shots != SHOTS:
+        raise SystemExit(f"The tilted-product example requires exactly {SHOTS} shots.")
+    main, _ = build_preparation(basis=run.basis.upper(), shot_offset=run.shot_offset)

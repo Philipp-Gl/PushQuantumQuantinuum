@@ -64,30 +64,46 @@ If your shell cannot find the commands, run `uv tool update-shell` and open a
 new terminal. You can then run the commands from any directory. To pick up
 changes from your checkout, rerun the install command with `--reinstall`.
 
-The tools accept a Python file with a module-level, zero-argument `@guppy`
-function named `main`. Use `output("bits", ...)` or other Guppy output tags to
-record values for each shot.
+Define a module-level, zero-argument `@guppy` function named `main` that returns
+`array[qubit, 16]`. Return the prepared system qubits in lattice order
+`q = x + 4*y`. The tools measure these qubits in the requested basis and record
+the outcomes under the `bits` tag. You can emit diagnostics under other tags.
+
+This minimal `program.py` prepares all 16 qubits in the zero state.
+
+```python
+from guppylang import guppy
+from guppylang.std.builtins import array
+from guppylang.std.quantum import qubit
+
+
+@guppy
+def main() -> array[qubit, 16]:
+    return array(qubit() for _ in range(16))
+```
 
 ```bash
-compile program.py
-compile program.py --format llvm-ir -o program.ll
-local-sim program.py --seed 42
-nexus-emulator program.bc --project MyNexusProject
-nexus-emulator program.py --project MyNexusProject -o h2-results.json
+compile program.py --basis x
+compile program.py --basis y --format llvm-ir
+local-sim program.py --basis z --seed 42
+nexus-emulator program.py --basis z --project MyNexusProject
+nexus-emulator program.x.bc --project MyNexusProject
 ```
 
 To use the versions in the repository's lockfile, run `uv sync --locked` from
 the repository root and prefix the commands with `uv run --locked`, for example
-`uv run --locked compile program.py`. The scorer and
+`uv run --locked compile program.py --basis x`. The scorer and
 [tilted-product example](examples/README.md) also use this project environment.
 
-- `compile` writes LLVM bitcode to `program.bc` by default. Use
-  `--format llvm-ir` to write textual QIR to `program.ll`.
+- `compile` targets H2 and writes LLVM bitcode such as `program.x.bc` by
+  default. Use `--format llvm-ir` for text QIR such as `program.y.ll`.
 - `local-sim` reads the required qubit count from the compiled QIR and uses it
-  to run Guppy in the noiseless Selene emulator. It writes `program.local.json`.
+  to run Guppy in the noiseless Selene emulator. Its default output includes
+  the basis, for example `program.z.local.json`.
 - `nexus-emulator` accepts Guppy source or LLVM bitcode. It logs in to Nexus,
-  executes on H2-1E using emulator credits, and writes `program.nexus.json`.
-  The file records the job ID while the command waits for results.
+  executes on H2-1E using emulator credits, and writes a file such as
+  `program.z.nexus.json`. The file records the job ID while the command waits
+  for results. Omit `--basis` for bitcode because it already includes measurement.
 
 Default output paths are beside the input file. Use `-o` or `--output` to
 choose a path. Both emulators default to 128 shots and accept `--shots`.

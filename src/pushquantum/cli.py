@@ -8,10 +8,14 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from uuid import uuid4
 
+from pushquantum.program import BASES, RunConfig, current_run, with_measurement
 
-def command(description, input_help):
+
+def command(description, input_help, *, basis_required=True):
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("input", type=Path, help=input_help)
+    parser.add_argument("--basis", type=str.lower, choices=BASES, required=basis_required,
+                        help="Measurement basis (required for Guppy source).")
     parser.add_argument("-o", "--output", type=Path, help="Set the output path.")
     return parser
 
@@ -22,7 +26,8 @@ def paths(parser, args, default_suffix, *, guppy_only=True):
         parser.error(f"Input file does not exist: {source}")
     if guppy_only and source.suffix.lower() != ".py":
         parser.error("Input must be a Python (.py) file.")
-    output = args.output or source.with_suffix(default_suffix)
+    basis_suffix = f".{args.basis}" if args.basis else ""
+    output = args.output or source.with_suffix(basis_suffix + default_suffix)
     if output.resolve() == source.resolve() or (output.exists() and output.samefile(source)):
         parser.error("Input and output must be different files.")
     return source, output
@@ -36,7 +41,7 @@ def positive_int(value):
 
 
 @contextmanager
-def guppy_main(source):
+def measured_program(source, basis, *, shot_offset, shots=128):
     from guppylang.defs import GuppyFunctionDefinition
 
     source = source.resolve()
@@ -47,13 +52,17 @@ def guppy_main(source):
     sys.modules[module_name] = module
     source_dir = str(source.parent)
     sys.path.insert(0, source_dir)
+    token = current_run.set(RunConfig(basis, shot_offset, shots))
     try:
         loader.exec_module(module)
         main = getattr(module, "main", None)
         if not isinstance(main, GuppyFunctionDefinition):
-            raise SystemExit(f"{source} must define a Guppy function named main.")
-        yield main
+            raise SystemExit(
+                f"{source} must define a zero-argument Guppy main returning array[qubit, 16]."
+            )
+        yield with_measurement(main, basis)
     finally:
+        current_run.reset(token)
         sys.path.remove(source_dir)
         del sys.modules[module_name]
 
@@ -93,7 +102,7 @@ def compile_main():
     from hugr_qir.hugr_to_qir import hugr_to_qir
     from hugr_qir.output import OutputFormat
 
-    with guppy_main(source) as main:
+    with measured_program(source, args.basis, shot_offset=1) as main:
         qir = hugr_to_qir(main.compile(), output_format=OutputFormat(args.format))
     output.parent.mkdir(parents=True, exist_ok=True)
     if isinstance(qir, bytes):
@@ -114,7 +123,7 @@ def local_sim_main():
     from hugr_qir.hugr_to_qir import to_qir_str
     from pyqir import Context, Module, required_num_qubits
 
-    with guppy_main(source) as main:
+    with measured_program(source, args.basis, shot_offset=0, shots=args.shots) as main:
         ir = to_qir_str(main.compile())
         entry = qir_entrypoint(Module.from_ir(Context(), ir))
         qubits = required_num_qubits(entry)
@@ -124,24 +133,30 @@ def local_sim_main():
         result = emulator.run()
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    write_json(output, {"backend": "Selene", "qubits": qubits, "shots": args.shots,
+    write_json(output, {"backend": "Selene", "basis": args.basis,
+                        "qubits": qubits, "shots": args.shots,
                         "results": shot_results(result)})
     print(f"Wrote {output}")
 
 
 def nexus_emulator_main():
     parser = command("Run a program on the Nexus H2-1E emulator.",
-                     "Python file defining a Guppy main, or QIR bitcode.")
+                     "Python file defining a Guppy main, or QIR bitcode.", basis_required=False)
     parser.add_argument("--shots", type=positive_int, default=128, help="Shot count (default: 128).")
     parser.add_argument("--project", default="PushQuantum-Thermal-Hackathon",
                         help="Nexus project (default: PushQuantum-Thermal-Hackathon).")
     args = parser.parse_args()
+    is_source = args.input.suffix.lower() == ".py"
+    if is_source and args.basis is None:
+        parser.error("--basis is required for Guppy source.")
+    if not is_source and args.basis is not None:
+        parser.error("Omit --basis for QIR bitcode, which already contains the measurement.")
     source, output = paths(parser, args, ".nexus.json", guppy_only=False)
 
-    if source.suffix.lower() == ".py":
+    if is_source:
         from hugr_qir.hugr_to_qir import to_qir_bytes
 
-        with guppy_main(source) as main:
+        with measured_program(source, args.basis, shot_offset=1, shots=args.shots) as main:
             qir = to_qir_bytes(main.compile())
     else:
         from pyqir import Context, Module
@@ -163,6 +178,8 @@ def nexus_emulator_main():
     program = qnx.qir.upload(qir=qir, name=name, project=project)
     document = {"backend": "H2-1E", "shots": args.shots, "project_id": str(project.id),
                 "program_id": str(program.id), "status": "uploaded"}
+    if is_source:
+        document["basis"] = args.basis
     write_json(output, document)
     job = qnx.start_execute_job(
         programs=[program], n_shots=[args.shots],
