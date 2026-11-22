@@ -14,7 +14,7 @@ _project_root = Path(__file__).resolve().parents[1]
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from physical_models.circuits.VQE.VQE import VariationalAnsatz
+from physical_models.circuits.VQE.VQE import VariationalAnsatz, get_periodic_4x4_edges
 
 
 
@@ -187,17 +187,7 @@ if __name__ == "__main__":
     # Build edges from lattice
     temperature = 0.01
     n_qubits = 16
-    def get_periodic_4x4_edges() -> list[tuple[int, int]]:
-        edges = []
-        for y in range(4):
-            for x_coord in range(4):
-                q = x_coord + 4 * y
-                q_right = ((x_coord + 1) % 4) + 4 * y
-                q_down = x_coord + 4 * ((y + 1) % 4)
-                edges.append((q, q_right))
-                edges.append((q, q_down))
-        return edges
-    # Demonstration on a 4-qubit toy lattice
+    # Demonstration on a 4x4-qubit lattice
     edges = get_periodic_4x4_edges()
     ansatz = VariationalAnsatz(N=n_qubits, edges=edges, layers=2, seed=42)
 
