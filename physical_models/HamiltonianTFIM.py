@@ -1,5 +1,6 @@
 # models/tfim.py
 
+
 class TransverseFieldIsingModel:
 
     def __init__(

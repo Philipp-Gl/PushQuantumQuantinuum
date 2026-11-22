@@ -33,7 +33,7 @@ def build_bound_pytket_circuit(theta: np.ndarray) -> Circuit:
 
 
 # 2. Load trained parameters at compile/import time based on TARGET_T
-TARGET_T = os.environ.get("TARGET_T", "4.0")
+TARGET_T = os.environ.get("TARGET_T", "0.01")
 PARAM_FILE = f"params_T{TARGET_T}.npz"
 
 if os.path.exists(PARAM_FILE):
@@ -42,8 +42,9 @@ if os.path.exists(PARAM_FILE):
     # For high-T beta-VQE: 16 Ry angles (in radians) to sample initial bitstrings
     # For T=0.01 pure ground state: all zeros (prepares |+...+)
     init_ry_angles = data["init_ry_angles"].tolist()
-    use_hadamard_basis = bool(data["use_hadamard_basis"])
+    use_hadamard_basis = False
 else:
+    print(f"Could not find params_T{TARGET_T}.npz using initial |+++> state")
     trained_theta = np.zeros(N_LAYERS * (32 + 32), dtype=float)
     init_ry_angles = [0.0] * 16
     use_hadamard_basis = True

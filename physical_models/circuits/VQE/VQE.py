@@ -17,7 +17,16 @@ from pytket import Circuit
 from pytket.extensions.qujax import tk_to_qujax
 
 
-
+def get_periodic_4x4_edges() -> list[tuple[int, int]]:
+        edges = []
+        for y in range(4):
+            for x_coord in range(4):
+                q = x_coord + 4 * y
+                q_right = ((x_coord + 1) % 4) + 4 * y
+                q_down = x_coord + 4 * ((y + 1) % 4)
+                edges.append((q, q_right))
+                edges.append((q, q_down))
+        return edges
     
 class VariationalAnsatz():
     """this class defines a circuit """
